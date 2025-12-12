@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { InventoryItem, SaleRecord } from "../types";
 
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT';
   if (!apiKey) {
     throw new Error("API Key not found");
   }
@@ -18,11 +18,11 @@ export const generateBusinessInsights = async (
     
     // Prepare data summary to reduce token usage while providing context
     const inventorySummary = inventory.map(item => 
-      `- ${item.name} (${item.category}): Qty ${item.quantity}, Cost GH₵${item.costPrice}, Sell GH₵${item.salesPrice}`
+      `- ${item.name} (${item.category}): Qty ${item.quantity}, Cost GHâµ${item.costPrice}, Sell GHâµ${item.salesPrice}`
     ).join('\n');
 
     const last5Sales = sales.slice(0, 50).map(s => 
-      `- Date: ${new Date(s.timestamp).toLocaleDateString()}, Total: GH₵${s.totalAmount.toFixed(2)}, Profit: GH₵${s.totalProfit.toFixed(2)}`
+      `- Date: ${new Date(s.timestamp).toLocaleDateString()}, Total: GHâµ${s.totalAmount.toFixed(2)}, Profit: GHâµ${s.totalProfit.toFixed(2)}`
     ).join('\n');
 
     const prompt = `
@@ -39,7 +39,7 @@ export const generateBusinessInsights = async (
       2. Suggest which items are likely most profitable based on the margin (Sales Price - Cost Price).
       3. Give general advice on inventory mix or pricing strategy.
       
-      Keep the tone professional, encouraging, and actionable. Use the currency GH₵.
+      Keep the tone professional, encouraging, and actionable. Use the currency GHâµ.
     `;
 
     const response = await ai.models.generateContent({
