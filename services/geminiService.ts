@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { InventoryItem, SaleRecord } from "../types";
 
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT';
   if (!apiKey) {
     throw new Error("API Key not found");
   }
@@ -61,13 +61,13 @@ export const generateBusinessInsights = async (
       Analysis Period: ${startDate ? startDate.toLocaleDateString() : 'All Time'} to ${endDate ? endDate.toLocaleDateString() : 'Now'}
       
       Sales Performance in Period:
-      - Total Revenue: GH₵${totalRevenue.toFixed(2)}
-      - Total Profit: GH₵${totalProfit.toFixed(2)}
+      - Total Revenue: GHâµ${totalRevenue.toFixed(2)}
+      - Total Profit: GHâµ${totalProfit.toFixed(2)}
       - Transaction Count: ${salesCount}
 
       Inventory Overview (Current Snapshot):
       - Total SKUs: ${inventoryStats.totalItems}
-      - Total Valuation: GH₵${inventoryStats.totalValue.toFixed(2)}
+      - Total Valuation: GHâµ${inventoryStats.totalValue.toFixed(2)}
       - Items Low on Stock: ${inventoryStats.lowStockCount}
     `;
 
@@ -102,7 +102,7 @@ export const generateBusinessInsights = async (
         3. **Top Performers:** Which items are driving revenue?
         4. **Recommendations:** Give actionable advice on pricing, bundling, or stock mix.
         
-        Keep the tone professional, encouraging, and actionable. Use the currency GH₵. Format the response with Markdown for readability (bolding, lists).
+        Keep the tone professional, encouraging, and actionable. Use the currency GHâµ. Format the response with Markdown for readability (bolding, lists).
         `;
     }
 
