@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { InventoryItem } from '../types';
+import { InventoryItem, UserRole } from '../types';
 import { Plus, Search, Edit2, Trash2, AlertCircle, Check, ClipboardEdit, X } from 'lucide-react';
 
 interface InventoryManagerProps {
@@ -8,9 +9,10 @@ interface InventoryManagerProps {
   onUpdate: (id: string, item: Partial<InventoryItem>) => void;
   onDelete: (id: string) => void;
   currencySymbol: string;
+  userRole: UserRole;
 }
 
-export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, onAdd, onUpdate, onDelete, currencySymbol }) => {
+export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, onAdd, onUpdate, onDelete, currencySymbol, userRole }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Edit/Add Modal State
@@ -21,6 +23,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [adjustItem, setAdjustItem] = useState<InventoryItem | null>(null);
   const [adjustQty, setAdjustQty] = useState<string>('');
+  const [adjustmentType, setAdjustmentType] = useState<'add' | 'remove' | 'set'>('add');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -82,7 +85,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
   // Stock Adjustment Handlers
   const openAdjustModal = (item: InventoryItem) => {
     setAdjustItem(item);
-    setAdjustQty(item.quantity.toString());
+    setAdjustQty('');
+    setAdjustmentType('add');
     setIsAdjustModalOpen(true);
   };
 
@@ -92,16 +96,36 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
     setIsAdjustModalOpen(false);
   };
 
+  const getResultingQty = () => {
+    if (!adjustItem) return 0;
+    const current = adjustItem.quantity;
+    const input = parseInt(adjustQty) || 0;
+    
+    if (adjustmentType === 'add') return current + input;
+    if (adjustmentType === 'remove') return Math.max(0, current - input);
+    return input; // set
+  };
+
   const handleStockAdjustment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adjustItem) {
-        const newQty = parseInt(adjustQty);
-        if (!isNaN(newQty) && newQty >= 0) {
-            onUpdate(adjustItem.id, { quantity: newQty });
-            closeAdjustModal();
-        } else {
-            alert("Please enter a valid non-negative quantity.");
-        }
+    if (!adjustItem) return;
+    
+    const inputVal = parseInt(adjustQty);
+    if (isNaN(inputVal) || inputVal < 0) {
+        alert("Please enter a valid non-negative quantity.");
+        return;
+    }
+
+    const finalQty = getResultingQty();
+    
+    let message = '';
+    if (adjustmentType === 'add') message = `Confirm adding ${inputVal} units to ${adjustItem.name}?\nNew Total: ${finalQty}`;
+    else if (adjustmentType === 'remove') message = `Confirm removing ${inputVal} units from ${adjustItem.name}?\nNew Total: ${finalQty}`;
+    else message = `Confirm setting stock for ${adjustItem.name} to ${finalQty}?`;
+
+    if (window.confirm(message)) {
+        onUpdate(adjustItem.id, { quantity: finalQty });
+        closeAdjustModal();
     }
   };
 
@@ -120,13 +144,15 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-primary hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary shadow-sm"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Add Product
-        </button>
+        {userRole === 'admin' && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-primary hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary shadow-sm"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Add Product
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -138,7 +164,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Stock</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Pricing</th>
-                <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                {userRole === 'admin' && (
+                  <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
@@ -172,32 +200,36 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     <div className="flex flex-col">
                       <span className="text-slate-900 font-medium">Sell: {currencySymbol}{item.salesPrice.toFixed(2)}</span>
-                      <span className="text-xs">Cost: {currencySymbol}{item.costPrice.toFixed(2)}</span>
+                      {userRole === 'admin' && (
+                        <span className="text-xs">Cost: {currencySymbol}{item.costPrice.toFixed(2)}</span>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex items-center justify-end space-x-3">
-                        <button 
-                            onClick={() => openAdjustModal(item)} 
-                            className="text-slate-400 hover:text-indigo-600 transition-colors"
-                            title="Quick Stock Adjustment"
-                        >
-                          <ClipboardEdit className="w-5 h-5" />
-                        </button>
-                        <button onClick={() => handleEdit(item)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Edit Details">
-                          <Edit2 className="w-5 h-5" />
-                        </button>
-                        <button onClick={() => onDelete(item.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Delete Product">
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                    </div>
-                  </td>
+                  {userRole === 'admin' && (
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end space-x-3">
+                          <button 
+                              onClick={() => openAdjustModal(item)} 
+                              className="text-slate-400 hover:text-indigo-600 transition-colors"
+                              title="Adjust Stock"
+                          >
+                            <ClipboardEdit className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => handleEdit(item)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Edit Details">
+                            <Edit2 className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => onDelete(item.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Delete Product">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {filteredInventory.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                    No products found. Add some inventory to get started!
+                  <td colSpan={userRole === 'admin' ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
+                    No products found.
                   </td>
                 </tr>
               )}
@@ -324,7 +356,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
       {/* Stock Adjustment Modal */}
       {isAdjustModalOpen && adjustItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm">
-             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all animate-fade-in">
+             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform transition-all animate-fade-in">
                  <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="text-lg font-bold text-slate-800 flex items-center">
                         <ClipboardEdit className="w-5 h-5 mr-2 text-primary" />
@@ -334,28 +366,62 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
                         <X className="w-6 h-6" />
                     </button>
                 </div>
+                
                 <form onSubmit={handleStockAdjustment} className="p-6">
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-slate-500 mb-1">Product</label>
+                    <div className="mb-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                        <div className="text-sm text-slate-500 mb-1">Product</div>
                         <div className="text-lg font-bold text-slate-800">{adjustItem.name}</div>
+                        <div className="text-sm text-slate-500 mt-1">Current Stock: <span className="font-bold text-slate-800">{adjustItem.quantity}</span></div>
+                    </div>
+
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Action</label>
+                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                            <button
+                                type="button"
+                                onClick={() => setAdjustmentType('add')}
+                                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${adjustmentType === 'add' ? 'bg-white text-green-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Add (+)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setAdjustmentType('remove')}
+                                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${adjustmentType === 'remove' ? 'bg-white text-red-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Remove (-)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setAdjustmentType('set')}
+                                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${adjustmentType === 'set' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Set Total
+                            </button>
+                        </div>
                     </div>
                     
                     <div className="mb-6">
-                        <label className="block text-sm font-medium text-slate-700 mb-2">New Total Quantity</label>
-                        <div className="flex items-center">
-                            <input
-                                type="number"
-                                min="0"
-                                required
-                                autoFocus
-                                className="block w-full border-slate-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary p-3 border text-lg"
-                                value={adjustQty}
-                                onChange={(e) => setAdjustQty(e.target.value)}
-                            />
-                        </div>
-                        <p className="text-xs text-slate-500 mt-2">
-                            Current Stock: <span className="font-semibold">{adjustItem.quantity}</span>
-                        </p>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                            {adjustmentType === 'set' ? 'New Total Quantity' : 'Quantity to ' + (adjustmentType === 'add' ? 'Add' : 'Remove')}
+                        </label>
+                        <input
+                            type="number"
+                            min="0"
+                            required
+                            autoFocus
+                            className="block w-full border-slate-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary p-3 border text-lg"
+                            value={adjustQty}
+                            onChange={(e) => setAdjustQty(e.target.value)}
+                            placeholder="0"
+                        />
+                    </div>
+
+                    <div className="flex justify-between items-center py-3 px-4 bg-slate-50 rounded-lg border border-slate-100 mb-6">
+                        <span className="text-sm text-slate-500">Resulting Stock:</span>
+                        <span className={`text-lg font-bold ${getResultingQty() < (adjustItem.lowStockThreshold || 0) ? 'text-red-600' : 'text-slate-800'}`}>
+                            {getResultingQty()}
+                        </span>
                     </div>
 
                     <div className="flex justify-end space-x-3">
@@ -370,7 +436,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ inventory, o
                             type="submit"
                             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-800 transition-colors font-medium"
                         >
-                            Update Stock
+                            Confirm Change
                         </button>
                     </div>
                 </form>

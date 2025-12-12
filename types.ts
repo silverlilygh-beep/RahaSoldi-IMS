@@ -26,7 +26,35 @@ export interface SaleRecord {
   timestamp: string;
 }
 
-export type ViewState = 'dashboard' | 'inventory' | 'pos' | 'insights' | 'history';
+export interface ExpenseRecord {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  date: string;
+  recordedAt: string;
+}
+
+export interface PurchaseOrderItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplier: string;
+  date: string;
+  status: 'ordered' | 'received' | 'cancelled';
+  items: PurchaseOrderItem[];
+  totalCost: number;
+  notes?: string;
+}
+
+export type ViewState = 'dashboard' | 'inventory' | 'pos' | 'history' | 'expenses' | 'financials' | 'insights' | 'purchases';
+
+export type UserRole = 'admin' | 'cashier';
 
 export interface DashboardMetrics {
   totalRevenue: number;

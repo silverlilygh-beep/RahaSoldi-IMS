@@ -1,5 +1,6 @@
+
 import React, { useMemo } from 'react';
-import { InventoryItem, SaleRecord } from '../types';
+import { InventoryItem, SaleRecord, UserRole } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { DollarSign, Package, TrendingUp, AlertTriangle } from 'lucide-react';
 
@@ -7,9 +8,10 @@ interface DashboardProps {
   inventory: InventoryItem[];
   sales: SaleRecord[];
   currencySymbol: string;
+  userRole: UserRole;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ inventory, sales, currencySymbol }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ inventory, sales, currencySymbol, userRole }) => {
   
   const metrics = useMemo(() => {
     const totalRevenue = sales.reduce((acc, sale) => acc + sale.totalAmount, 0);
@@ -64,12 +66,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ inventory, sales, currency
                 {currencySymbol}{data.sales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500">Net Profit:</span>
-              <span className="font-bold text-green-600">
-                {currencySymbol}{data.profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
+            {userRole === 'admin' && (
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Net Profit:</span>
+                <span className="font-bold text-green-600">
+                  {currencySymbol}{data.profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -100,20 +104,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ inventory, sales, currency
           color="bg-green-500" 
           subtext="Lifetime sales"
         />
-        <StatCard 
-          title="Total Profit" 
-          value={`${currencySymbol}${metrics.totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
-          icon={TrendingUp} 
-          color="bg-blue-500" 
-          subtext="Net earnings"
-        />
-        <StatCard 
-          title="Inventory Cost Value" 
-          value={`${currencySymbol}${metrics.totalInventoryValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
-          icon={Package} 
-          color="bg-indigo-500" 
-          subtext={`Potential: ${currencySymbol}${metrics.potentialSalesValue.toLocaleString()}`}
-        />
+        {userRole === 'admin' && (
+          <StatCard 
+            title="Total Profit" 
+            value={`${currencySymbol}${metrics.totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
+            icon={TrendingUp} 
+            color="bg-blue-500" 
+            subtext="Net earnings"
+          />
+        )}
+        {userRole === 'admin' && (
+          <StatCard 
+            title="Inventory Cost Value" 
+            value={`${currencySymbol}${metrics.totalInventoryValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
+            icon={Package} 
+            color="bg-indigo-500" 
+            subtext={`Potential: ${currencySymbol}${metrics.potentialSalesValue.toLocaleString()}`}
+          />
+        )}
         <StatCard 
           title="Low Stock Alerts" 
           value={metrics.lowStockCount} 
@@ -142,20 +150,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ inventory, sales, currency
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Profit Trend</h3>
-           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="date" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name="Profit" />
-              </LineChart>
-            </ResponsiveContainer>
+        {userRole === 'admin' && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Profit Trend</h3>
+             <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name="Profit" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

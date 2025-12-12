@@ -1,23 +1,35 @@
+
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, ShoppingCart, BrainCircuit, Menu, X, History, Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, BrainCircuit, Menu, X, History, Wifi, WifiOff, Loader2, DollarSign, PieChart, Truck, LogOut, Shield } from 'lucide-react';
 import { InventoryManager } from './components/InventoryManager';
 import { SalesTerminal } from './components/SalesTerminal';
 import { Dashboard } from './components/Dashboard';
 import { AIInsights } from './components/AIInsights';
 import { SalesHistory } from './components/SalesHistory';
-import { InventoryItem, SaleRecord, SaleItem, ViewState } from './types';
+import { ExpensesManager } from './components/ExpensesManager';
+import { FinancialReport } from './components/FinancialReport';
+import { PurchaseOrdersManager } from './components/PurchaseOrdersManager';
+import { Auth } from './components/Auth';
+import { InventoryItem, SaleRecord, SaleItem, ViewState, ExpenseRecord, PurchaseOrder, UserRole } from './types';
 import { supabase } from './services/supabaseClient';
+import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
+  // Auth State
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   // State Management
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   // Data State
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
 
   // Connectivity Listeners
   useEffect(() => {
@@ -31,8 +43,28 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Auth Listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      // Reset view to dashboard on login
+      if (session) setActiveView('dashboard');
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   // Fetch Data from Supabase
   const fetchData = async () => {
+    if (!session) return; // Don't fetch if not logged in
+
     setLoading(true);
     try {
       // Fetch Inventory
@@ -52,17 +84,40 @@ const App: React.FC = () => {
       if (salesError) throw salesError;
       if (salesData) setSales(salesData);
 
+      // Fetch Expenses
+      const { data: expData, error: expError } = await supabase
+        .from('expenses')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (expError) throw expError;
+      if (expData) setExpenses(expData);
+
+      // Fetch Purchase Orders
+      const { data: poData, error: poError } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (poError) {
+         console.warn("Could not fetch purchase orders. Table might not exist yet.");
+      } else if (poData) {
+         setPurchaseOrders(poData);
+      }
+
     } catch (error) {
       console.error("Error fetching data:", error);
-      // Fallback to empty if critical failure, or show alert
     } finally {
       setLoading(false);
     }
   };
 
+  // Fetch data when session becomes available
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (session) {
+      fetchData();
+    }
+  }, [session]);
 
   // Handlers
   const handleAddItem = async (item: Omit<InventoryItem, 'id' | 'lastUpdated'>) => {
@@ -156,8 +211,6 @@ const App: React.FC = () => {
         if (saleError) throw saleError;
 
         // 2. Update Inventory Quantities
-        // Note: For strict consistency, this should be an RPC or transaction, 
-        // but looping updates is acceptable for this scale.
         for (const item of items) {
              const currentItem = inventory.find(i => i.id === item.itemId);
              if (currentItem) {
@@ -175,6 +228,109 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddExpense = async (expense: Omit<ExpenseRecord, 'id' | 'recordedAt'>) => {
+    const newExpense: ExpenseRecord = {
+      ...expense,
+      id: crypto.randomUUID(),
+      recordedAt: new Date().toISOString()
+    };
+
+    setExpenses(prev => [newExpense, ...prev]);
+
+    try {
+      const { error } = await supabase.from('expenses').insert([newExpense]);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Error adding expense:", err);
+      alert("Failed to save expense.");
+      fetchData();
+    }
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    if (window.confirm('Delete this expense record?')) {
+      setExpenses(prev => prev.filter(e => e.id !== id));
+      try {
+        const { error } = await supabase.from('expenses').delete().eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        console.error("Error deleting expense:", err);
+        fetchData();
+      }
+    }
+  };
+
+  const handleCreatePO = async (po: Omit<PurchaseOrder, 'id'>) => {
+    const newPO: PurchaseOrder = {
+      ...po,
+      id: crypto.randomUUID(),
+    };
+
+    setPurchaseOrders(prev => [newPO, ...prev]);
+
+    try {
+      const { error } = await supabase.from('purchase_orders').insert([newPO]);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Error creating PO:", err);
+      alert("Failed to save Purchase Order.");
+      fetchData();
+    }
+  };
+
+  const handleUpdatePOStatus = async (id: string, status: 'received' | 'cancelled') => {
+    const po = purchaseOrders.find(p => p.id === id);
+    if (!po) return;
+
+    // Optimistic Update
+    setPurchaseOrders(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+
+    try {
+      const { error } = await supabase
+        .from('purchase_orders')
+        .update({ status })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Logic: If marking as RECEIVED, update inventory stock
+      if (status === 'received' && po.status !== 'received') {
+        const updatedInventory = [...inventory];
+        
+        for (const item of po.items) {
+           const invIndex = updatedInventory.findIndex(i => i.id === item.itemId);
+           if (invIndex > -1) {
+             const currentInv = updatedInventory[invIndex];
+             const newQty = currentInv.quantity + item.quantity;
+             
+             // Update local state
+             updatedInventory[invIndex] = {
+               ...currentInv,
+               quantity: newQty,
+               lastUpdated: new Date().toISOString()
+             };
+
+             // Update Database
+             await supabase
+               .from('inventory')
+               .update({ quantity: newQty, lastUpdated: new Date().toISOString() })
+               .eq('id', item.itemId);
+           }
+        }
+        setInventory(updatedInventory);
+      }
+
+    } catch (err) {
+      console.error("Error updating PO status:", err);
+      alert("Failed to update order status.");
+      fetchData();
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState, icon: any, label: string }) => (
     <button
       onClick={() => { setActiveView(view); setIsMobileMenuOpen(false); }}
@@ -189,16 +345,27 @@ const App: React.FC = () => {
     </button>
   );
 
-  if (loading) {
+  // 1. Initial Loading State
+  if (authLoading) {
       return (
           <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-primary">
               <Loader2 className="w-12 h-12 animate-spin mb-4" />
-              <h2 className="text-xl font-bold">Loading Raha Soldi System...</h2>
-              <p className="text-slate-500 mt-2">Connecting to Supabase Database</p>
+              <h2 className="text-xl font-bold">Raha Soldi System</h2>
+              <p className="text-slate-500 mt-2">Checking secure session...</p>
           </div>
       );
   }
 
+  // 2. Auth Guard
+  if (!session) {
+    return <Auth />;
+  }
+
+  // Extract Role
+  // In a real app we might fetch this from a 'profiles' table, but for this prototype we rely on metadata
+  const userRole = (session.user.user_metadata?.role as UserRole) || 'cashier';
+
+  // 3. Main Application
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       {/* Sidebar - Desktop */}
@@ -207,20 +374,40 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-bold tracking-tight text-white">Raha Soldi <span className="text-secondary">Ent.</span></h1>
           <p className="text-xs text-blue-300 mt-1 uppercase tracking-wider">Inventory System</p>
         </div>
-        <nav className="flex-1 mt-6">
+        <nav className="flex-1 mt-6 overflow-y-auto">
           <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
           <NavItem view="pos" icon={ShoppingCart} label="Point of Sale" />
           <NavItem view="history" icon={History} label="Sales History" />
           <NavItem view="inventory" icon={Package} label="Inventory" />
-          <NavItem view="insights" icon={BrainCircuit} label="AI Insights" />
+          
+          {/* Admin Only Links */}
+          {userRole === 'admin' && (
+            <>
+              <NavItem view="purchases" icon={Truck} label="Purchase Orders" />
+              <NavItem view="expenses" icon={DollarSign} label="Expenses" />
+              <NavItem view="financials" icon={PieChart} label="Financial Reports" />
+              <NavItem view="insights" icon={BrainCircuit} label="AI Insights" />
+            </>
+          )}
         </nav>
-        <div className="p-6">
-            <div className={`flex items-center justify-center text-xs px-3 py-2 rounded-lg ${isOnline ? 'bg-blue-800 text-blue-200' : 'bg-red-800 text-red-100'}`}>
+        <div className="p-6 border-t border-blue-800">
+             <div className="mb-4">
+                 <div className="flex items-center space-x-2 mb-1">
+                   <Shield className="w-3 h-3 text-secondary" />
+                   <p className="text-xs text-blue-300 uppercase">{userRole}</p>
+                 </div>
+                 <p className="text-sm font-medium truncate" title={session.user.email}>{session.user.email}</p>
+             </div>
+            <button 
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center space-x-2 bg-blue-900 hover:bg-blue-800 text-white py-2 rounded-lg transition-colors text-sm"
+            >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
+            </button>
+            <div className={`mt-4 flex items-center justify-center text-xs px-3 py-2 rounded-lg ${isOnline ? 'bg-blue-800 text-blue-200' : 'bg-red-800 text-red-100'}`}>
                 {isOnline ? <Wifi className="w-3 h-3 mr-2" /> : <WifiOff className="w-3 h-3 mr-2" />}
-                {isOnline ? 'Database Connected' : 'Offline Mode'}
-            </div>
-            <div className="text-center text-xs text-blue-400 mt-4">
-                 &copy; {new Date().getFullYear()} Raha Soldi Ent.
+                {isOnline ? 'Online' : 'Offline Mode'}
             </div>
         </div>
       </aside>
@@ -235,12 +422,30 @@ const App: React.FC = () => {
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 bg-primary z-20 pt-20">
+        <div className="lg:hidden fixed inset-0 bg-primary z-20 pt-20 overflow-y-auto">
           <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
           <NavItem view="pos" icon={ShoppingCart} label="Point of Sale" />
           <NavItem view="history" icon={History} label="Sales History" />
           <NavItem view="inventory" icon={Package} label="Inventory" />
-          <NavItem view="insights" icon={BrainCircuit} label="AI Insights" />
+          
+          {userRole === 'admin' && (
+            <>
+              <NavItem view="purchases" icon={Truck} label="Purchase Orders" />
+              <NavItem view="expenses" icon={DollarSign} label="Expenses" />
+              <NavItem view="financials" icon={PieChart} label="Financial Reports" />
+              <NavItem view="insights" icon={BrainCircuit} label="AI Insights" />
+            </>
+          )}
+
+          <div className="p-4 border-t border-blue-800 mt-4">
+             <button 
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center space-x-2 bg-blue-900 text-white py-3 rounded-lg"
+            >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -254,14 +459,20 @@ const App: React.FC = () => {
                 {activeView === 'inventory' && 'Inventory Management'}
                 {activeView === 'pos' && 'New Sale'}
                 {activeView === 'history' && 'Transaction History'}
+                {activeView === 'expenses' && 'Expense Management'}
+                {activeView === 'financials' && 'Financial Health'}
                 {activeView === 'insights' && 'Business Intelligence'}
+                {activeView === 'purchases' && 'Supplier Purchase Orders'}
               </h2>
               <p className="text-slate-500 text-sm mt-1">
-                {activeView === 'dashboard' && 'Welcome back, Manager.'}
+                {activeView === 'dashboard' && 'Welcome back.'}
                 {activeView === 'inventory' && 'Manage your stock and pricing.'}
                 {activeView === 'pos' && 'Process transactions quickly.'}
                 {activeView === 'history' && 'Review past sales and performance.'}
+                {activeView === 'expenses' && 'Track operational costs.'}
+                {activeView === 'financials' && 'Analyze Profit & Loss and Balance Sheet.'}
                 {activeView === 'insights' && 'AI-powered recommendations.'}
+                {activeView === 'purchases' && 'Create orders and restock inventory.'}
               </p>
             </div>
             <div className="text-right hidden sm:block">
@@ -270,11 +481,31 @@ const App: React.FC = () => {
           </header>
 
           <div className="fade-in">
-            {activeView === 'dashboard' && <Dashboard inventory={inventory} sales={sales} currencySymbol="GH₵" />}
-            {activeView === 'inventory' && <InventoryManager inventory={inventory} onAdd={handleAddItem} onUpdate={handleUpdateItem} onDelete={handleDeleteItem} currencySymbol="GH₵" />}
-            {activeView === 'pos' && <SalesTerminal inventory={inventory} onCompleteSale={handleCompleteSale} currencySymbol="GH₵" />}
-            {activeView === 'history' && <SalesHistory sales={sales} currencySymbol="GH₵" />}
-            {activeView === 'insights' && <AIInsights inventory={inventory} sales={sales} />}
+             {loading ? (
+                 <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                     <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                     <p>Loading data...</p>
+                 </div>
+             ) : (
+                <>
+                    {activeView === 'dashboard' && <Dashboard inventory={inventory} sales={sales} currencySymbol="GH₵" userRole={userRole} />}
+                    {activeView === 'inventory' && <InventoryManager inventory={inventory} onAdd={handleAddItem} onUpdate={handleUpdateItem} onDelete={handleDeleteItem} currencySymbol="GH₵" userRole={userRole} />}
+                    {activeView === 'pos' && <SalesTerminal inventory={inventory} onCompleteSale={handleCompleteSale} currencySymbol="GH₵" />}
+                    {activeView === 'history' && <SalesHistory sales={sales} currencySymbol="GH₵" />}
+                    {userRole === 'admin' && activeView === 'expenses' && <ExpensesManager expenses={expenses} onAdd={handleAddExpense} onDelete={handleDeleteExpense} currencySymbol="GH₵" />}
+                    {userRole === 'admin' && activeView === 'financials' && <FinancialReport inventory={inventory} sales={sales} expenses={expenses} currencySymbol="GH₵" />}
+                    {userRole === 'admin' && activeView === 'insights' && <AIInsights inventory={inventory} sales={sales} />}
+                    {userRole === 'admin' && activeView === 'purchases' && (
+                    <PurchaseOrdersManager 
+                        inventory={inventory} 
+                        purchaseOrders={purchaseOrders} 
+                        onCreateOrder={handleCreatePO} 
+                        onUpdateStatus={handleUpdatePOStatus} 
+                        currencySymbol="GH₵" 
+                    />
+                    )}
+                </>
+             )}
           </div>
         </div>
       </main>
